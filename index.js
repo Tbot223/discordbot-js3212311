@@ -1,59 +1,53 @@
-const Discord = require('discord.js');
-const client = new Discord.Client({ intents: ["GUILDS", "GUILD_MESSAGES"] })
-const dotenv = require('dotenv'); 
+const dotenv = require("dotenv");
 dotenv.config();
 
-const sleep = (ms) => {
-    return new Promise((r) => setTimeout(r, ms));
-}
+const { Client, Collection, REST, Routes } = require("discord.js");
+const client = (module.exports = new Client({intents:[131071]}));
+client.login(process.env.TOKEN);
 
-if (process.env.TOKEN == null) {
-    console.log("An discord token is empty.");
-    sleep(60000).then(() => console.log("Service is getting stopped automatically"));
-    return 0;
-}
+client.once("ready", ()=> {
+    console.log(`${client.user.tag}`)
+});
 
-const discordLogin = async() => {
-    try {
-        await client.login(process.env.TOKEN);  
-    } catch (TOKEN_INVALID) {
-        console.log("An invalid token was provided");
-        sleep(60000).then(() => console.log("Service is getting stopped automatically"));
+const fs = require("fs");
+
+const eventsPath = "./events";
+const eventFiles = fs
+    .readdirSync(eventsPath)
+    .filter((file) => file.endsWith(".js"));
+
+for (const file of eventFiles) {
+    const filePath = `./${eventsPath}/${file}`;
+    const event = require(filePath);
+    if (event.once == true) {
+        client.once(event.name, ( ...args) => event.execute(...args));
+    } else {
+        client.on(event.name, ( ...args) => event.execute(...args));
     }
 }
 
+client.commands = new Collection();
 
-discordLogin();
+const commands_json = [];
 
+const commandsCategoryPath = "./commands";
+const commandsCategoryFiles = fs.readdirSync(commandsCategoryPath);
 
-client.on('ready', () => {
-    console.log(`Logged in as ${client.user.tag}.`);
-});
-
-  
-client.on('messageCreate', msg => {
-
-    try { 
-        if (msg.content === process.env.PREFIX + 'call') msg.channel.send(`!callback`);
-
-        if (msg.content === process.env.PREFIX + 'avatar') msg.channel.send(msg.author.displayAvatarURL());
-        
-        if(msg.content === process.env.PREFIX + 'help') {
-            const embed = new Discord.MessageEmbed()
-            .setTitle("도움말")
-            .setColor('000') 
-            .setDescription('디스코드봇 테스트입니다.');
-
-            msg.reply({ embeds: [embed] })
-        }
-
-        if(msg.content === process.env.PREFIX + 'server') {
-            msg.channel.send(`현재 서버의 이름은 ${msg.guild.name} 입니다.\n총 멤버 수는 ${msg.guild.memberCount} 명 입니다.`)
-          }
-
-        console.log(msg.content)
-    } catch (e) {
-        console.log(e);
+for (const category of commandsCategoryFiles) {
+    const commandsPath = `./commands/${category}`;
+    const commandsFiles = fs
+        .readdirSync(commandsPath)
+        .filter((file) => file.endsWith('.js'));
+    for (const file of commandsFiles) {
+        const command = require(`./commands/${category}/${file}`);
+        client.commands.set(command.data.name, command);
+        commands_json.push(command.data.toJSON());
     }
-    
-});
+}
+
+const rest = new REST({version:"10"}).setToken(process.env.TOKEN);
+
+rest
+    .put(Routes.applicationCommands(process.env.ID), {body:commands_json})
+    .then((command) => console.log(`${command.length}개의 커맨드를 푸쉬했습니다.`))
+    .catch(console.error);
